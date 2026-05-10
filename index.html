@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的 AI 離線備忘錄</title>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: sans-serif; }
+        #calendar { max-width: 900px; margin: 20px auto; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="p-4 text-center">
+        <h1 class="text-2xl font-bold text-gray-800">📅 智能提醒日曆</h1>
+        <button onclick="enableNotification()" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded shadow">啟動提醒功能</button>
+    </div>
+
+    <div id="calendar"></div>
+
+    <div id="eventModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 class="text-xl mb-4">新增提醒事項</h2>
+            <input type="text" id="eventTitle" placeholder="要做什麼？(例如：線上課程)" class="w-full border p-2 mb-4">
+            <input type="time" id="eventTime" class="w-full border p-2 mb-4">
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal()" class="px-4 py-2 text-gray-500">取消</button>
+                <button onclick="saveEvent()" class="px-4 py-2 bg-green-500 text-white rounded">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let calendar;
+        let selectedDate;
+        let reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                locale: 'zh-tw',
+                selectable: true,
+                events: reminders,
+                dateClick: function(info) {
+                    selectedDate = info.dateStr;
+                    document.getElementById('eventModal').classList.remove('hidden');
+                }
+            });
+            calendar.render();
+            
+            // 啟動心跳檢查：每 30 秒檢查一次鬧鐘
+            setInterval(checkAlarms, 30000);
+        });
+
+        function closeModal() {
+            document.getElementById('eventModal').classList.add('hidden');
+        }
+
+        function saveEvent() {
+            const title = document.getElementById('eventTitle').value;
+            const time = document.getElementById('eventTime').value;
+            if (!title || !time) return alert("請填寫內容與時間");
+
+            const newEvent = {
+                title: title,
+                start: selectedDate + 'T' + time,
+                allDay: false
+            };
+
+            reminders.push(newEvent);
+            localStorage.setItem('reminders', JSON.stringify(reminders));
+            calendar.addEvent(newEvent);
+            closeModal();
+        }
+
+        // 核心：鬧鐘檢查與發聲
+        function checkAlarms() {
+            const now = new Date();
+            const nowStr = now.toISOString().slice(0, 16); // 格式如 2026-07-02T14:30
+
+            reminders.forEach((event, index) => {
+                if (event.start === nowStr) {
+                    playAlarmSound();
+                    if (Notification.permission === "granted") {
+                        new Notification("⏰ 提醒：", { body: event.title });
+                    } else {
+                        alert("⏰ 時間到！該去：" + event.title);
+                    }
+                    // 提醒後可以選擇刪除或標記已完成，避免重複響
+                }
+            });
+        }
+
+        // 免費生成音效 (嗶嗶聲)
+        function playAlarmSound() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = 440; // A4 音
+            osc.start();
+            setTimeout(() => osc.stop(), 2000); // 響 2 秒
+        }
+
+        function enableNotification() {
+            Notification.requestPermission();
+            // 這裡順便觸發一個無聲操作，讓瀏覽器允許此頁面發聲
+            const ctx = new AudioContext();
+            ctx.resume();
+        }
+    </script>
+</body>
+</html>
