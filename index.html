@@ -2,32 +2,56 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的 AI 離線備忘錄</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的 AI 鬧鐘日曆</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: sans-serif; }
-        #calendar { max-width: 900px; margin: 20px auto; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        :root { --fc-border-color: #e5e7eb; --fc-today-bg-color: #eff6ff; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #calendar { background: white; border-radius: 12px; padding: 10px; height: 60vh; }
+        .fc-event-title { font-weight: bold; font-size: 0.85em; }
+        .alarm-active { animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { background-color: #ef4444; } 50% { background-color: #f87171; } 100% { background-color: #ef4444; } }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50 text-gray-900 pb-20">
 
-    <div class="p-4 text-center">
-        <h1 class="text-2xl font-bold text-gray-800">📅 智能提醒日曆</h1>
-        <button onclick="enableNotification()" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded shadow">啟動提醒功能</button>
+    <div id="alarmOverlay" class="hidden fixed inset-0 z-50 bg-red-600 flex flex-col items-center justify-center text-white p-6">
+        <div class="text-6xl mb-4">⏰</div>
+        <h2 id="alarmTitle" class="text-3xl font-bold mb-8 text-center">時間到！</h2>
+        <div class="flex flex-col gap-4 w-full">
+            <button onclick="stopAlarm()" class="bg-white text-red-600 font-bold py-4 rounded-xl text-xl shadow-lg">關閉鬧鐘</button>
+            <button onclick="snoozeAlarm()" class="bg-red-800 text-white font-bold py-4 rounded-xl text-xl">10 分鐘後提醒</button>
+        </div>
     </div>
 
-    <div id="calendar"></div>
+    <div class="p-4">
+        <header class="flex justify-between items-center mb-4">
+            <h1 class="text-xl font-bold">📅 備忘錄鬧鐘</h1>
+            <button onclick="enableNotification()" id="syncBtn" class="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-sm font-medium">點擊啟用鈴聲</button>
+        </header>
 
-    <div id="eventModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-        <div class="bg-white p-6 rounded-lg w-full max-w-md">
-            <h2 class="text-xl mb-4">新增提醒事項</h2>
-            <input type="text" id="eventTitle" placeholder="要做什麼？(例如：線上課程)" class="w-full border p-2 mb-4">
-            <input type="time" id="eventTime" class="w-full border p-2 mb-4">
-            <div class="flex justify-end gap-2">
-                <button onclick="closeModal()" class="px-4 py-2 text-gray-500">取消</button>
-                <button onclick="saveEvent()" class="px-4 py-2 bg-green-500 text-white rounded">儲存</button>
+        <div id="calendar" class="shadow-sm border border-gray-200"></div>
+
+        <div class="mt-6">
+            <h3 class="font-bold text-lg mb-3">所有提醒事項</h3>
+            <div id="taskList" class="flex flex-col gap-3">
+                </div>
+        </div>
+    </div>
+
+    <div id="eventModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+            <h2 class="text-xl font-bold mb-4 text-blue-600">新增提醒</h2>
+            <input type="text" id="eventTitle" placeholder="要做什麼？" class="w-full border-2 border-gray-100 rounded-lg p-3 mb-4 focus:border-blue-500 outline-none">
+            <label class="block text-sm text-gray-500 mb-1">提醒時間</label>
+            <input type="time" id="eventTime" class="w-full border-2 border-gray-100 rounded-lg p-3 mb-6">
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="closeModal()" class="py-3 text-gray-400 font-medium">取消</button>
+                <button onclick="saveEvent()" class="py-3 bg-blue-600 text-white rounded-xl font-bold">儲存設定</button>
             </div>
         </div>
     </div>
@@ -36,12 +60,16 @@
         let calendar;
         let selectedDate;
         let reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
+        let alarmAudio = null;
+        let currentActiveAlarm = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             const calendarEl = document.getElementById('calendar');
             calendar = new FullCalendar.Calendar(calendarEl, {
                 initialView: 'dayGridMonth',
                 locale: 'zh-tw',
+                headerToolbar: { left: 'prev', center: 'title', right: 'next' },
+                height: 'auto',
                 selectable: true,
                 events: reminders,
                 dateClick: function(info) {
@@ -50,68 +78,143 @@
                 }
             });
             calendar.render();
+            renderTaskList();
             
-            // 啟動心跳檢查：每 30 秒檢查一次鬧鐘
-            setInterval(checkAlarms, 30000);
+            // 每 15 秒檢查一次
+            setInterval(checkAlarms, 15000);
         });
 
-        function closeModal() {
-            document.getElementById('eventModal').classList.add('hidden');
+        function renderTaskList() {
+            const listEl = document.getElementById('taskList');
+            listEl.innerHTML = reminders.length === 0 ? '<p class="text-gray-400 text-sm italic">目前沒有提醒...</p>' : '';
+            
+            // 按時間排序
+            reminders.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+            reminders.forEach((ev, index) => {
+                const date = new Date(ev.start);
+                const timeStr = `${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+                
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center";
+                div.innerHTML = `
+                    <div>
+                        <div class="font-bold text-gray-800">${ev.title}</div>
+                        <div class="text-xs text-blue-500 font-medium">${timeStr}</div>
+                    </div>
+                    <button onclick="deleteEvent(${index})" class="text-red-400 p-2 hover:bg-red-50 rounded-lg">刪除</button>
+                `;
+                listEl.appendChild(div);
+            });
         }
 
         function saveEvent() {
             const title = document.getElementById('eventTitle').value;
             const time = document.getElementById('eventTime').value;
-            if (!title || !time) return alert("請填寫內容與時間");
+            if (!title || !time) return;
 
-            const newEvent = {
-                title: title,
-                start: selectedDate + 'T' + time,
-                allDay: false
-            };
-
+            const newEvent = { title, start: selectedDate + 'T' + time, allDay: false, id: Date.now().toString() };
             reminders.push(newEvent);
-            localStorage.setItem('reminders', JSON.stringify(reminders));
-            calendar.addEvent(newEvent);
+            syncData();
             closeModal();
+            document.getElementById('eventTitle').value = '';
         }
 
-        // 核心：鬧鐘檢查與發聲
-        function checkAlarms() {
-            const now = new Date();
-            const nowStr = now.toISOString().slice(0, 16); // 格式如 2026-07-02T14:30
+        function deleteEvent(index) {
+            reminders.splice(index, 1);
+            syncData();
+        }
 
-            reminders.forEach((event, index) => {
-                if (event.start === nowStr) {
-                    playAlarmSound();
-                    if (Notification.permission === "granted") {
-                        new Notification("⏰ 提醒：", { body: event.title });
-                    } else {
-                        alert("⏰ 時間到！該去：" + event.title);
-                    }
-                    // 提醒後可以選擇刪除或標記已完成，避免重複響
+        function syncData() {
+            localStorage.setItem('reminders', JSON.stringify(reminders));
+            calendar.removeAllEvents();
+            calendar.addEventSource(reminders);
+            renderTaskList();
+        }
+
+        function closeModal() { document.getElementById('eventModal').classList.add('hidden'); }
+
+        // --- 鬧鐘核心功能 ---
+
+        function enableNotification() {
+            Notification.requestPermission();
+            // 預加載聲音：iPhone 需要使用者點擊後才能播放
+            initAudio();
+            document.getElementById('syncBtn').innerText = "✅ 提醒已就緒";
+            document.getElementById('syncBtn').className = "bg-green-100 text-green-600 px-3 py-1 rounded-full text-sm font-medium";
+        }
+
+        function initAudio() {
+            if (!alarmAudio) {
+                alarmAudio = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound() {
+            if (!alarmAudio) return;
+            const osc = alarmAudio.createOscillator();
+            const gain = alarmAudio.createGain();
+            osc.connect(gain);
+            gain.connect(alarmAudio.destination);
+            osc.type = 'square'; // 這種波形比較像鬧鐘聲
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.5, alarmAudio.currentTime);
+            osc.start();
+            // 建立間歇性的嗶嗶聲
+            let count = 0;
+            const interval = setInterval(() => {
+                gain.gain.setValueAtTime(count % 2 === 0 ? 0.5 : 0, alarmAudio.currentTime);
+                count++;
+                if (!currentActiveAlarm) {
+                    osc.stop();
+                    clearInterval(interval);
+                }
+            }, 200);
+        }
+
+        function checkAlarms() {
+            if (currentActiveAlarm) return; // 如果已經在響了就跳過
+
+            const now = new Date();
+            const nowStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}T${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+            reminders.forEach((ev) => {
+                if (ev.start === nowStr) {
+                    triggerAlarm(ev);
                 }
             });
         }
 
-        // 免費生成音效 (嗶嗶聲)
-        function playAlarmSound() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.value = 440; // A4 音
-            osc.start();
-            setTimeout(() => osc.stop(), 2000); // 響 2 秒
+        function triggerAlarm(ev) {
+            currentActiveAlarm = ev;
+            document.getElementById('alarmTitle').innerText = ev.title;
+            document.getElementById('alarmOverlay').classList.remove('hidden');
+            playSound();
+            if (Notification.permission === "granted") {
+                new Notification("⏰ 時間到！", { body: ev.title });
+            }
         }
 
-        function enableNotification() {
-            Notification.requestPermission();
-            // 這裡順便觸發一個無聲操作，讓瀏覽器允許此頁面發聲
-            const ctx = new AudioContext();
-            ctx.resume();
+        function stopAlarm() {
+            currentActiveAlarm = null;
+            document.getElementById('alarmOverlay').classList.add('hidden');
+        }
+
+        function snoozeAlarm() {
+            if (!currentActiveAlarm) return;
+            const newTime = new Date(new Date().getTime() + 10 * 60000);
+            const snoozeTime = `${newTime.getFullYear()}-${(newTime.getMonth()+1).toString().padStart(2, '0')}-${newTime.getDate().toString().padStart(2, '0')}T${newTime.getHours().toString().padStart(2, '0')}:${newTime.getMinutes().toString().padStart(2, '0')}`;
+            
+            const snoozedEvent = { 
+                title: "[貪睡] " + currentActiveAlarm.title, 
+                start: snoozeTime, 
+                allDay: false, 
+                id: Date.now().toString() 
+            };
+            
+            reminders.push(snoozedEvent);
+            syncData();
+            stopAlarm();
         }
     </script>
 </body>
