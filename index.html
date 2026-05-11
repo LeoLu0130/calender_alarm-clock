@@ -3,79 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>我的 AI 鬧鐘日曆</title>
+    <title>我的 AI 鬧鐘日曆 V3</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root { --fc-border-color: #f3f4f6; }
-        body { font-family: -apple-system, sans-serif; background-color: #f9fafb; overflow-x: hidden; }
+        body { font-family: -apple-system, sans-serif; background-color: #ffffff; overflow: hidden; }
         
-        /* 1. 日曆版面縮小優化 */
+        /* 日曆全屏化優化 */
         #calendar { 
-            background: white; 
-            border-radius: 12px; 
-            padding: 5px; 
-            height: 380px !important; /* 固定高度，不讓它長太高 */
-            font-size: 0.85rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            height: 80vh !important; 
+            padding: 5px;
+            font-size: 0.9rem;
         }
-        .fc .fc-toolbar-title { font-size: 1.1rem !important; }
-        .fc .fc-daygrid-day-frame { min-height: 35px !important; }
-        .fc .fc-button { padding: 4px 8px !important; font-size: 0.8rem !important; }
+        .fc .fc-toolbar-title { font-size: 1.2rem !important; font-weight: 800; }
+        .fc .fc-daygrid-day-frame { min-height: 60px !important; }
+
+        /* 懸浮清單按鈕 */
+        #listToggleBtn {
+            position: fixed;
+            bottom: 30px;
+            right: 20px;
+            z-index: 30;
+            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.5);
+        }
 
         /* 鬧鐘覆蓋層 */
-        #alarmOverlay { 
-            background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-        }
+        #alarmOverlay { background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%); }
 
-        /* 任務清單樣式 */
-        .task-card {
-            background: white;
-            border-left: 4px solid #3b82f6;
-            transition: transform 0.2s;
+        /* 獨立清單視窗 (Modal) */
+        .full-modal {
+            transition: transform 0.3s ease-out;
+            transform: translateY(100%);
         }
-        .task-card:active { transform: scale(0.98); }
+        .full-modal.active { transform: translateY(0); }
     </style>
 </head>
-<body class="pb-10">
+<body class="bg-white">
 
     <div id="alarmOverlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center text-white p-6">
-        <div class="text-6xl mb-4 animate-bounce">⏰</div>
-        <h2 id="alarmTitle" class="text-3xl font-bold mb-8 text-center px-4">時間到！</h2>
+        <div class="text-7xl mb-6 animate-bounce">⏰</div>
+        <h2 id="alarmTitle" class="text-3xl font-bold mb-10 text-center px-4">時間到！</h2>
         <div class="flex flex-col gap-4 w-full max-w-xs">
-            <button onclick="stopAlarm()" class="bg-white text-red-600 font-bold py-4 rounded-2xl text-xl shadow-lg active:bg-gray-100">關閉鬧鐘</button>
-            <button onclick="snoozeAlarm()" class="bg-red-900/50 text-white font-bold py-3 rounded-2xl text-lg border border-white/30">10 分鐘後再提醒</button>
+            <button onclick="stopAlarm()" class="bg-white text-red-600 font-black py-5 rounded-2xl text-2xl shadow-xl active:scale-95 transition">關閉鬧鐘</button>
+            <button onclick="snoozeAlarm()" class="bg-black/20 text-white font-bold py-4 rounded-2xl text-lg border border-white/20">10 分鐘後再提醒</button>
         </div>
     </div>
 
     <div class="p-4 max-w-md mx-auto">
-        <header class="flex justify-between items-center mb-3">
-            <h1 class="text-lg font-bold text-gray-800">📅 我的提醒</h1>
-            <button onclick="enableNotification()" id="syncBtn" class="bg-blue-500 text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-md">啟動鈴聲</button>
+        <header class="flex justify-between items-center mb-4">
+            <h1 class="text-xl font-black text-gray-900 tracking-tight">📅 備忘錄</h1>
+            <button onclick="enableNotification()" id="syncBtn" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-bold transition active:scale-90">啟動鈴聲</button>
         </header>
 
-        <div id="calendar" class="mb-6"></div>
-
-        <div>
-            <h3 class="font-bold text-gray-700 mb-3 flex items-center">
-                <span class="bg-blue-500 w-1.5 h-5 rounded-full mr-2"></span>
-                待辦清單
-            </h3>
-            <div id="taskList" class="space-y-3"></div>
-        </div>
+        <div id="calendar"></div>
     </div>
 
-    <div id="eventModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-6">
-        <div class="bg-white p-6 rounded-3xl w-full shadow-2xl">
-            <h2 class="text-xl font-bold mb-4 text-gray-800">新提醒事項</h2>
-            <input type="text" id="eventTitle" placeholder="要做什麼？" class="w-full bg-gray-50 border-none rounded-xl p-4 mb-4 focus:ring-2 focus:ring-blue-500 outline-none text-lg">
-            <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">提醒時間</label>
-            <input type="time" id="eventTime" class="w-full bg-gray-50 border-none rounded-xl p-4 mb-6 text-lg">
-            <div class="flex gap-3">
+    <button id="listToggleBtn" onclick="toggleList(true)" class="bg-blue-600 text-white px-6 py-4 rounded-2xl font-bold flex items-center gap-2 active:scale-90 transition">
+        <span>📋 查看清單</span>
+        <span id="taskCount" class="bg-white text-blue-600 w-5 h-5 rounded-full text-[10px] flex items-center justify-center">0</span>
+    </button>
+
+    <div id="listModal" class="full-modal fixed inset-0 bg-gray-50 z-40 flex flex-col">
+        <div class="p-6 flex justify-between items-center bg-white border-b">
+            <h2 class="text-2xl font-black text-gray-800">目前提醒</h2>
+            <button onclick="toggleList(false)" class="text-gray-400 font-bold p-2">✕ 關閉</button>
+        </div>
+        <div id="taskList" class="flex-1 overflow-y-auto p-6 space-y-4">
+            </div>
+    </div>
+
+    <div id="eventModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-md z-40 flex items-center justify-center p-6">
+        <div class="bg-white p-8 rounded-[32px] w-full shadow-2xl">
+            <h2 class="text-2xl font-black mb-6 text-gray-800">新提醒事項</h2>
+            <input type="text" id="eventTitle" placeholder="要做什麼？" class="w-full bg-gray-100 border-none rounded-2xl p-4 mb-4 focus:ring-2 focus:ring-blue-500 outline-none text-lg">
+            <label class="block text-xs font-black text-gray-400 uppercase mb-2 ml-1">提醒時間</label>
+            <input type="time" id="eventTime" class="w-full bg-gray-100 border-none rounded-2xl p-4 mb-8 text-lg">
+            <div class="flex gap-4">
                 <button onclick="closeModal()" class="flex-1 py-4 text-gray-400 font-bold">取消</button>
-                <button onclick="saveEvent()" class="flex-1 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-200">儲存</button>
+                <button onclick="saveEvent()" class="flex-1 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">儲存</button>
             </div>
         </div>
     </div>
@@ -93,7 +101,7 @@
                 initialView: 'dayGridMonth',
                 locale: 'zh-tw',
                 headerToolbar: { left: 'prev', center: 'title', right: 'next' },
-                height: 'auto',
+                height: '100%',
                 selectable: true,
                 events: reminders,
                 dateClick: function(info) {
@@ -102,13 +110,22 @@
                 }
             });
             calendar.render();
-            renderTaskList();
-            setInterval(checkAlarms, 10000); // 改為每 10 秒巡邏一次
+            updateTaskUI();
+            setInterval(checkAlarms, 10000);
         });
 
-        function renderTaskList() {
+        function toggleList(show) {
+            const modal = document.getElementById('listModal');
+            if (show) modal.classList.add('active');
+            else modal.classList.remove('active');
+        }
+
+        function updateTaskUI() {
             const listEl = document.getElementById('taskList');
-            listEl.innerHTML = reminders.length === 0 ? '<div class="text-center py-10 text-gray-300 text-sm">目前沒有任務</div>' : '';
+            const countEl = document.getElementById('taskCount');
+            countEl.innerText = reminders.length;
+            
+            listEl.innerHTML = reminders.length === 0 ? '<div class="text-center py-20 text-gray-300">目前沒有任何提醒</div>' : '';
             
             reminders.sort((a, b) => new Date(a.start) - new Date(b.start));
 
@@ -118,13 +135,13 @@
                 const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
                 
                 const div = document.createElement('div');
-                div.className = "task-card p-4 rounded-2xl shadow-sm flex justify-between items-center";
+                div.className = "bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex justify-between items-center";
                 div.innerHTML = `
                     <div>
-                        <div class="font-bold text-gray-800">${ev.title}</div>
-                        <div class="text-xs text-blue-500 font-bold tracking-wider">${dateStr} @ ${timeStr}</div>
+                        <div class="font-black text-gray-800 text-lg">${ev.title}</div>
+                        <div class="text-sm text-blue-500 font-bold">${dateStr} 的 ${timeStr}</div>
                     </div>
-                    <button onclick="deleteEvent(${index})" class="bg-red-50 text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold">刪除</button>
+                    <button onclick="deleteEvent(${index})" class="bg-red-50 text-red-500 w-12 h-12 rounded-2xl flex items-center justify-center font-bold">✕</button>
                 `;
                 listEl.appendChild(div);
             });
@@ -135,14 +152,12 @@
             const time = document.getElementById('eventTime').value;
             if (!time) return alert("請選擇時間");
 
-            const newEvent = { 
+            reminders.push({ 
                 id: 'id-' + Date.now(),
                 title: title, 
                 start: selectedDate + 'T' + time, 
-                allDay: false,
-                isFired: false // 初始化：尚未響過
-            };
-            reminders.push(newEvent);
+                isFired: false 
+            });
             syncData();
             closeModal();
             document.getElementById('eventTitle').value = '';
@@ -157,7 +172,7 @@
             localStorage.setItem('reminders', JSON.stringify(reminders));
             calendar.removeAllEvents();
             calendar.addEventSource(reminders);
-            renderTaskList();
+            updateTaskUI();
         }
 
         function closeModal() { document.getElementById('eventModal').classList.add('hidden'); }
@@ -165,23 +180,20 @@
         function enableNotification() {
             Notification.requestPermission();
             if (!alarmAudioContext) alarmAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-            document.getElementById('syncBtn').innerText = "✅ 提醒已就緒";
-            document.getElementById('syncBtn').className = "bg-green-500 text-white px-3 py-1.5 rounded-full text-xs font-bold";
+            document.getElementById('syncBtn').innerText = "✅ 鈴聲已就緒";
+            document.getElementById('syncBtn').className = "bg-green-500 text-white px-4 py-2 rounded-xl text-xs font-bold";
         }
 
         function checkAlarms() {
             if (currentActiveAlarm) return;
-
             const now = new Date();
-            // 格式化當前時間為 YYYY-MM-DDTHH:mm
             const nowStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}T${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
             reminders.forEach((ev) => {
-                // 核心邏輯：時間吻合 且 尚未響過
                 if (ev.start === nowStr && !ev.isFired) {
-                    ev.isFired = true; // 立即標記為已響過，防止重複
+                    ev.isFired = true;
                     triggerAlarm(ev);
-                    localStorage.setItem('reminders', JSON.stringify(reminders)); // 儲存標記狀態
+                    localStorage.setItem('reminders', JSON.stringify(reminders));
                 }
             });
         }
@@ -219,14 +231,7 @@
             if (!currentActiveAlarm) return;
             const snoozeDate = new Date(new Date().getTime() + 10 * 60000);
             const snoozeStr = `${snoozeDate.getFullYear()}-${(snoozeDate.getMonth()+1).toString().padStart(2, '0')}-${snoozeDate.getDate().toString().padStart(2, '0')}T${snoozeDate.getHours().toString().padStart(2, '0')}:${snoozeDate.getMinutes().toString().padStart(2, '0')}`;
-            
-            reminders.push({ 
-                id: 'id-' + Date.now(),
-                title: "[貪睡] " + currentActiveAlarm.title, 
-                start: snoozeStr, 
-                allDay: false,
-                isFired: false 
-            });
+            reminders.push({ title: "[貪睡] " + currentActiveAlarm.title, start: snoozeStr, isFired: false });
             syncData();
             stopAlarm();
         }
